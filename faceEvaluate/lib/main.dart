@@ -1,64 +1,92 @@
-import 'dart:html' as html;
-import 'dart:typed_data';
 import 'dart:convert';
+import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:http/http.dart' as http;
 
 void main() {
-  runApp(MyApp());
+  runApp(FaceEvaluatorApp());
 }
 
-class MyApp extends StatelessWidget {
+class FaceEvaluatorApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      home: ImagePickerExample(),
+      home: FaceEvaluatorScreen(),
     );
   }
 }
 
-class ImagePickerExample extends StatefulWidget {
+class FaceEvaluatorScreen extends StatefulWidget {
   @override
-  _ImagePickerExampleState createState() => _ImagePickerExampleState();
+  _FaceEvaluatorScreenState createState() => _FaceEvaluatorScreenState();
 }
 
-class _ImagePickerExampleState extends State<ImagePickerExample> {
-  String? _imageDataUrl;
+class _FaceEvaluatorScreenState extends State<FaceEvaluatorScreen> {
+  File? _image;
+  final picker = ImagePicker();
+  String result = "평가 결과가 여기에 표시됩니다.";
 
-  void _pickImage() {
-    final html.FileUploadInputElement input = html.FileUploadInputElement();
-    input.accept = 'image/*';
-    input.click();
-
-    input.onChange.listen((event) {
-      final file = input.files!.first;
-      final reader = html.FileReader();
-
-      reader.readAsDataUrl(file);
-
-      reader.onLoadEnd.listen((event) {
-        setState(() {
-          _imageDataUrl = reader.result as String?;
-        });
+  Future<void> _pickImage() async {
+    final pickedFile = await picker.pickImage(source: ImageSource.gallery);
+    if (pickedFile != null) {
+      setState(() {
+        _image = File(pickedFile.path);
       });
-    });
+    }
+  }
+
+  Future<void> _uploadImage() async {
+    if (_image == null) return;
+
+    final request = http.MultipartRequest(
+      'POST',
+      Uri.parse('https://binary96.store/api/evaluate'), // 서버 주소 입력
+    );
+
+    request.files.add(await http.MultipartFile.fromPath('images', _image!.path));
+
+    try {
+      final response = await request.send();
+      if (response.statusCode == 200) {
+        final responseBody = await response.stream.bytesToString();
+        final responseData = jsonDecode(responseBody);
+
+        setState(() {
+          result = responseData['results'][0]; // 평가 결과를 표시
+        });
+      } else {
+        setState(() {
+          result = 'Error: ${response.reasonPhrase}';
+        });
+      }
+    } catch (e) {
+      setState(() {
+        result = 'Error: $e';
+      });
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text('Image Picker Example')),
+      appBar: AppBar(title: Text('재미로 보는 얼굴 평가 ^^')),
       body: Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
+            if (_image != null) Image.file(_image!),
+            SizedBox(height: 20),
             ElevatedButton(
               onPressed: _pickImage,
-              child: Text('Select Image'),
+              child: Text('사진 선택하기'),
             ),
-            if (_imageDataUrl != null) ...[
-              SizedBox(height: 20),
-              Image.network(_imageDataUrl!),
-            ]
+            ElevatedButton(
+              onPressed: _uploadImage,
+              child: Text('평가받기'),
+            ),
+            SizedBox(height: 20),
+            Text(result), // 평가 결과 표시
           ],
         ),
       ),
